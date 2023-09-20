@@ -1,12 +1,13 @@
 #include <iostream>
-#include <cstring>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <sys/epoll.h>
 #include <cerrno>
+#include <memory>
+#include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
 #include "utils/utils.h"
+#include "socket/socket.h"
+#include "socket/inet_address.h"
+#include "epoll/epoll.h"
 
 #define MAX_EVENTS 1024
 #define READ_BUFFER 1024
@@ -15,74 +16,61 @@ void setnonblocking(int fd) {
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
 
+void handleReadEvent(int sockfd){
+    char buf[READ_BUFFER];
+    while(true){    //由于使用非阻塞IO，读取客户端buffer，一次读取buf大小数据，直到全部读取完毕
+        bzero(&buf, sizeof(buf));
+        ssize_t bytes_read = read(sockfd, buf, sizeof(buf));
+        if(bytes_read > 0){
+            printf("message from client fd %d: %s\n", sockfd, buf);
+            write(sockfd, buf, sizeof(buf));
+        } else if(bytes_read == -1 && errno == EINTR){  //客户端正常中断、继续读取
+            printf("continue reading");
+            continue;
+        } else if(bytes_read == -1 && ((errno == EAGAIN) || (errno == EWOULDBLOCK))){//非阻塞IO，这个条件表示数据全部读取完毕
+            printf("finish reading once, errno: %d\n", errno);
+            break;
+        } else if(bytes_read == 0){  //EOF，客户端断开连接
+            printf("EOF, client fd %d disconnected\n", sockfd);
+            close(sockfd);   //关闭socket会自动将文件描述符从epoll树上移除
+            break;
+        }
+    }
+}
+
 int main() {
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    errif(sockfd == -1, "socket create error");
+    auto socket = std::make_unique<Socket>();
 
-    sockaddr_in serv_addr;
-    std::memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    serv_addr.sin_port = htons(8888);
+    InetAddress addr("127.0.0.1", 8080);
 
-    errif(bind(sockfd, reinterpret_cast<sockaddr*>(&serv_addr), sizeof(serv_addr)) == -1, "socket bind error");
+    socket->Bind(addr);
 
-    errif(listen(sockfd, SOMAXCONN) == -1, "socket listen error");
+    socket->Listen();
+    
+    auto epoll = std::make_unique<Epoll>();
 
-    int epfd = epoll_create1(0);
-    errif(epfd == -1, "epoll create error");
+    socket->SetNonBlocking();
 
-    epoll_event events[MAX_EVENTS], ev;
-    std::memset(&events, 0, sizeof(events));
-    std::memset(&ev, 0, sizeof(ev));
-    ev.data.fd = sockfd;
-    ev.events = EPOLLIN | EPOLLET;
-    setnonblocking(sockfd);
-    epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev);
+    epoll->AddFd(socket->GetFd(), EPOLLIN | EPOLLET);
+
+    int sockfd = socket->GetFd();
 
     while (true) {
-        int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
-        errif(nfds == -1, "epoll wait error");
-        for (int i = 0; i < nfds; ++i) {
-            if (events[i].data.fd == sockfd) {
-                sockaddr_in clnt_addr;
-                std::memset(&clnt_addr, 0, sizeof(clnt_addr));
-                socklen_t clnt_addr_len = sizeof(clnt_addr);
-
-                int clnt_sockfd = accept(sockfd, reinterpret_cast<sockaddr*>(&clnt_addr), &clnt_addr_len);
-                errif(clnt_sockfd == -1, "socket accept error");
-                std::cout << "New client fd " << clnt_sockfd << "! IP: " << inet_ntoa(clnt_addr.sin_addr) << " Port: " << ntohs(clnt_addr.sin_port) << std::endl;
-
-                std::memset(&ev, 0, sizeof(ev));
-                ev.data.fd = clnt_sockfd;
-                ev.events = EPOLLIN | EPOLLET;
-                setnonblocking(clnt_sockfd);
-                epoll_ctl(epfd, EPOLL_CTL_ADD, clnt_sockfd, &ev);
-            } else if (events[i].events & EPOLLIN) {
-                char buf[READ_BUFFER];
-                while (true) {
-                    std::memset(&buf, 0, sizeof(buf));
-                    ssize_t bytes_read = read(events[i].data.fd, buf, sizeof(buf));
-                    if (bytes_read > 0) {
-                        std::cout << "Message from client fd " << events[i].data.fd << ": " << buf << std::endl;
-                        write(events[i].data.fd, buf, sizeof(buf));
-                    } else if (bytes_read == -1 && errno == EINTR) {
-                        std::cout << "Continue reading" << std::endl;
-                        continue;
-                    } else if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                        std::cout << "Finish reading once, errno: " << errno << std::endl;
-                        break;
-                    } else if (bytes_read == 0) {
-                        std::cout << "EOF, client fd " << events[i].data.fd << " disconnected" << std::endl;
-                        close(events[i].data.fd);
-                        break;
-                    }
-                }
-            } else {
-                std::cout << "Something else happened" << std::endl;
+        std::vector<epoll_event> events = epoll->poll();
+        int nfds = events.size();
+        for(int i = 0; i < nfds; ++i){
+            if(events[i].data.fd == socket->GetFd()){       // new client connection
+                InetAddress clnt_addr;  
+                Socket *clnt_sock = new Socket(socket->Accept(clnt_addr));  
+                printf("new client fd %d!\n", clnt_sock->GetFd());
+                clnt_sock->SetNonBlocking();
+                epoll->AddFd(clnt_sock->GetFd(), EPOLLIN | EPOLLET);
+            } else if(events[i].events & EPOLLIN){      // read event
+                handleReadEvent(events[i].data.fd);
+            } else{         
+                printf("something else happened\n");
             }
         }
     }
-    close(sockfd);
     return 0;
 }
