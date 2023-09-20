@@ -1,0 +1,34 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/utils/utils.h
+string
+-
+
+/home/chenzixuan/MyWebServer/src/client/client.cpp
+iostream
+-
+cstring
+-
+unistd.h
+-
+sys/socket.h
+-
+arpa/inet.h
+-
+utils/utils.h
+/home/chenzixuan/MyWebServer/src/client/utils/utils.h
+
+/home/chenzixuan/MyWebServer/src/utils/utils.cpp
+utils/utils.h
+/home/chenzixuan/MyWebServer/src/utils/utils/utils.h
+iostream
+-
+cstring
+-
+

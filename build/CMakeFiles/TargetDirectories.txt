@@ -1,0 +1,4 @@
+/home/chenzixuan/MyWebServer/build/CMakeFiles/rebuild_cache.dir
+/home/chenzixuan/MyWebServer/build/CMakeFiles/edit_cache.dir
+/home/chenzixuan/MyWebServer/build/CMakeFiles/client.dir
+/home/chenzixuan/MyWebServer/build/CMakeFiles/server.dir
