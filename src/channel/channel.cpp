@@ -1,11 +1,11 @@
 #include "channel/channel.h"
-#include "epoll/epoll.h"
+#include "server/event_loop.h"
 
-Channel::Channel(Epoll *_ep, int _fd) : ep(_ep), fd(_fd), events(0), revents(0), inEpoll(false) {}
+Channel::Channel(EventLoop *_eloop, int _fd) : loop(_eloop), fd(_fd), events(0), revents(0), inEpoll(false) {}
 
 void Channel::enableReading() {
     events |= EPOLLIN;
-    ep->updateChannel(this);
+    loop->updateChannel(this);
 }
 
 int Channel::getFd() {
@@ -30,4 +30,12 @@ bool Channel::getInEpoll() {
 
 void Channel::setInEpoll() {
     inEpoll = true;
+}
+
+void Channel::handleEvent() {
+    callback();
+}
+
+void Channel::setCallback(std::function<void()> cb) {
+    callback = cb;
 }

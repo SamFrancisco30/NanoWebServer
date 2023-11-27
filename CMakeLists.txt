@@ -14,6 +14,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # Source files
 set(SOURCE_FILES_UTILS src/utils/utils.cpp)
 set(SOURCE_FILES_SERVER src/server/server.cpp)
+set(SOURCE_FILES_EVENTLOOP src/server/event_loop.cpp)
 set(SOURCE_FILES_CLIENT src/client/client.cpp)
 set(SOURCE_FILES_EPOLL src/epoll/epoll.cpp)
 set(SOURCE_FILES_SOCKET src/socket/socket.cpp)
@@ -21,7 +22,9 @@ set(SOURCE_FILES_INETADDR src/socket/inet_address.cpp)
 set(SOURCE_FILES_CHANNEL src/channel/channel.cpp)
 
 # Executable for server
-add_executable(server ${SOURCE_FILES_UTILS} ${SOURCE_FILES_SERVER} ${SOURCE_FILES_EPOLL} ${SOURCE_FILES_SOCKET} ${SOURCE_FILES_INETADDR} ${SOURCE_FILES_CHANNEL})
+add_executable(server src/server.cpp ${SOURCE_FILES_UTILS} ${SOURCE_FILES_SERVER}
+ ${SOURCE_FILES_EPOLL} ${SOURCE_FILES_SOCKET} ${SOURCE_FILES_INETADDR} 
+ ${SOURCE_FILES_CHANNEL} ${SOURCE_FILES_EVENTLOOP})
 
 # Executable for client
 add_executable(client ${SOURCE_FILES_UTILS} ${SOURCE_FILES_CLIENT})
